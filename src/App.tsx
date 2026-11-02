@@ -55,6 +55,7 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatSources, setChatSources] = useState<{ title: string; url: string }[]>([]);
+  const [chatDemoMode, setChatDemoMode] = useState<boolean | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -100,6 +101,7 @@ function App() {
       const result = await sendCounsellorMessage(message);
       setChatAnswer(result.answer);
       setChatSources(result.sources);
+      setChatDemoMode(result.demo_mode);
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
     } finally {
@@ -173,6 +175,7 @@ function App() {
           input={chatInput}
           answer={chatAnswer}
           sources={chatSources}
+          demoMode={chatDemoMode}
           loading={chatLoading}
           error={chatError}
           onInput={setChatInput}
@@ -260,7 +263,7 @@ function Dashboard({ courses, courseLoading, courseError, onNavigate, onChat }: 
         <div><div className="section-kicker">A PLACE TO BEGIN</div><h2>Paths worth exploring</h2></div>
         <button className="text-button" onClick={() => onNavigate("Explore courses")}>All courses <ArrowRight size={15} /></button>
       </div>
-      {courseError && <p className="inline-error">{courseError}. Start the API to load the live catalogue.</p>}
+      {courseError && <p className="inline-error">{courseError}</p>}
       {courseLoading ? <div className="loading-row">Finding a few good places to start…</div> : (
         <div className="course-preview-grid">
           {courses.map((course, index) => <CourseCard key={course.id} course={course} index={index} onClick={() => onNavigate("Explore courses")} />)}
@@ -406,10 +409,11 @@ function EvidencePassport() {
   );
 }
 
-function Counsellor({ input, answer, sources, loading, error, onInput, onClose, onSubmit }: {
+function Counsellor({ input, answer, sources, demoMode, loading, error, onInput, onClose, onSubmit }: {
   input: string;
   answer: string;
   sources: { title: string; url: string }[];
+  demoMode: boolean | null;
   loading: boolean;
   error: string;
   onInput: (value: string) => void;
@@ -427,9 +431,9 @@ function Counsellor({ input, answer, sources, loading, error, onInput, onClose, 
           <div className="suggested-label">A few ways to get started</div>
           <div className="suggested-prompts">{starterQuestions.map((question) => <button key={question} onClick={() => onSubmit(undefined, question)}>{question}<ArrowUpRight size={14} /></button>)}</div>
           {loading && <div className="assistant-message chat-loading"><span className="chat-message-label">KAUSHALSETU GUIDE</span><p>Thinking through a few possibilities<span className="typing-dots"><i /><i /><i /></span></p></div>}
-          {answer && <div className="assistant-message answer-message"><span className="chat-message-label">A PLACE TO START <span>GUIDED DEMO</span></span><p>{answer}</p>{sources.length > 0 && <div className="chat-sources"><strong>Useful official starting points</strong>{sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={12} /></a>)}</div>}</div>}
-          {error && <div className="chat-error">{error} Check that the backend is running, then try again.</div>}
-          <div className="demo-disclaimer"><ShieldCheck size={14} /> Guided demo, not an AI-generated recommendation. Verify eligibility with official sources.</div>
+          {answer && <div className="assistant-message answer-message"><span className="chat-message-label">A PLACE TO START <span>{demoMode ? "GUIDED DEMO" : "GEMINI AI"}</span></span><p>{answer}</p>{sources.length > 0 && <div className="chat-sources"><strong>Useful official starting points</strong>{sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={12} /></a>)}</div>}</div>}
+          {error && <div className="chat-error">{error}</div>}
+          <div className="demo-disclaimer"><ShieldCheck size={14} /> {answer ? `${demoMode ? "Guided demo" : "Gemini AI"} guidance is a starting point, not verified eligibility advice. Confirm details with official sources.` : "Your message is answered by Gemini when configured; otherwise this is a guided demo. Verify eligibility with official sources."}</div>
         </div>
         <form className="chat-composer" onSubmit={(event) => onSubmit(event)}>
           <textarea value={input} onChange={(event) => onInput(event.target.value)} placeholder="Tell me what’s on your mind…" rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSubmit(); } }} />

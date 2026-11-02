@@ -16,6 +16,10 @@ An evidence-aware education and career exploration MVP for students and families
 
 Copy `.env.example` to `.env` and set `GEMINI_API_KEY` to enable Gemini. Keep it server-side; never add it to frontend variables or source control. Without a key, the counsellor uses the clearly labeled demo responses.
 
+Google sign-in uses an OAuth 2.0 authorization-code flow with PKCE, state, and nonce checks. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in the backend `.env`. Register the exact redirect URI in Google Cloud Console. The client secret stays on the backend; the browser receives only the public client ID. The backend verifies Google's ID token, stores the account, and keeps the sign-in token in an HttpOnly cookie. For production, use a custom domain for both frontend and API when possible (for example `app.example.com` and `api.example.com`) so browsers can share the secure session cookie reliably.
+
+If a Google client secret has been exposed, revoke/rotate it in Google Cloud Console before configuring the new secret on the backend. Do not send OAuth secrets through chat or add them to Vercel frontend variables.
+
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -44,8 +48,12 @@ Vercel hosts the Vite frontend; it does not start this FastAPI application autom
 - `GEMINI_MODEL` — optional; defaults to `gemini-2.5-flash`
 - `DATABASE_URL` — persistent PostgreSQL connection string for production
 - `CORS_ORIGINS` — exact frontend origin(s), comma-separated (for example `https://your-project.vercel.app`)
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` — Google OAuth web client credentials (secret is backend-only)
+- `GOOGLE_REDIRECT_URI` — exact registered frontend callback, such as `https://your-project.vercel.app/auth/callback`
 
 In Vercel, set `VITE_API_BASE_URL` to the deployed backend origin (for example `https://your-api.example.com`, without an `/api` suffix), then redeploy the frontend. The backend health check is `/api/health`; it reports whether Gemini or demo mode is active without exposing the key. If the counsellor cannot connect, check that the backend is running, the Vercel URL is correct, and the frontend origin is included in `CORS_ORIGINS`.
+
+For Google sign-in in production, also register the production callback URL in Google Cloud Console and set `GOOGLE_REDIRECT_URI` to that exact URL. Add your production frontend origin to `CORS_ORIGINS` so the HttpOnly session cookie can be used by the frontend.
 
 ## PostgreSQL
 

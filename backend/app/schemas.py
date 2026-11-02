@@ -32,3 +32,28 @@ class ChatResponse(BaseModel):
     recommendations: list[CourseResponse]
     sources: list[SourceReference]
     demo_mode: bool = True
+
+
+class GoogleAuthConfig(BaseModel):
+    enabled: bool
+    client_id: str | None = None
+    redirect_uri: str | None = None
+
+
+class GoogleCodeExchangeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=4096)
+    code_verifier: str = Field(
+        min_length=43,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._~-]+$",
+    )
+    nonce: str = Field(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
+    redirect_uri: str = Field(min_length=1, max_length=500)
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    picture: str | None
+    email_verified: bool

@@ -20,6 +20,20 @@ export interface ChatResponse {
   demo_mode: boolean;
 }
 
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+  email_verified: boolean;
+}
+
+interface GoogleAuthConfig {
+  enabled: boolean;
+  client_id: string | null;
+  redirect_uri: string | null;
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 
 function apiUrl(path: string): string {
@@ -75,4 +89,41 @@ export async function sendCounsellorMessage(message: string): Promise<ChatRespon
   });
   await ensureOk(response, "Counsellor request failed");
   return response.json() as Promise<ChatResponse>;
+}
+
+export async function getGoogleAuthConfig(): Promise<GoogleAuthConfig> {
+  const response = await request(apiUrl("/api/auth/google/config"));
+  await ensureOk(response, "Google sign-in configuration unavailable");
+  return response.json() as Promise<GoogleAuthConfig>;
+}
+
+export async function exchangeGoogleCode(
+  code: string,
+  codeVerifier: string,
+  nonce: string,
+  redirectUri: string,
+): Promise<AuthUser> {
+  const response = await request(apiUrl("/api/auth/google/exchange"), {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, code_verifier: codeVerifier, nonce, redirect_uri: redirectUri }),
+  });
+  await ensureOk(response, "Google sign-in failed");
+  return response.json() as Promise<AuthUser>;
+}
+
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const response = await request(apiUrl("/api/auth/me"), { credentials: "include" });
+  if (response.status === 401) return null;
+  await ensureOk(response, "Could not restore your sign-in");
+  return response.json() as Promise<AuthUser>;
+}
+
+export async function signOut(): Promise<void> {
+  const response = await request(apiUrl("/api/auth/logout"), {
+    method: "POST",
+    credentials: "include",
+  });
+  await ensureOk(response, "Could not sign out");
 }

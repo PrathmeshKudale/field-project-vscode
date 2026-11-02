@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -25,7 +25,16 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { getCourses, sendCounsellorMessage, type Course } from "./api";
+import {
+  exchangeGoogleCode,
+  getCourses,
+  getCurrentUser,
+  getGoogleAuthConfig,
+  sendCounsellorMessage,
+  signOut,
+  type AuthUser,
+  type Course,
+} from "./api";
 
 type View = "Overview" | "Explore courses" | "Career pathways" | "Scholarships" | "Skill builder" | "Evidence passport";
 
@@ -60,6 +69,57 @@ function App() {
   const [chatError, setChatError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [language, setLanguage] = useState("EN");
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const authRestoreStarted = useRef(false);
+
+  useEffect(() => {
+    if (authRestoreStarted.current) return;
+    authRestoreStarted.current = true;
+    const isCallback = window.location.pathname === "/auth/callback";
+
+    async function restoreAuthentication() {
+      try {
+        if (isCallback) {
+          setAuthLoading(true);
+          const params = new URLSearchParams(window.location.search);
+          const providerError = params.get("error");
+          const code = params.get("code");
+          const returnedState = params.get("state");
+          const expectedState = sessionStorage.getItem("google_oauth_state");
+          const codeVerifier = sessionStorage.getItem("google_oauth_verifier");
+          const nonce = sessionStorage.getItem("google_oauth_nonce");
+          sessionStorage.removeItem("google_oauth_state");
+          sessionStorage.removeItem("google_oauth_verifier");
+          sessionStorage.removeItem("google_oauth_nonce");
+          window.history.replaceState({}, "", "/");
+
+          if (providerError) throw new Error("Google sign-in was cancelled or denied.");
+          if (!code || !returnedState || !expectedState || returnedState !== expectedState || !codeVerifier || !nonce) {
+            throw new Error("Google sign-in could not be verified. Please try again.");
+          }
+          const config = await getGoogleAuthConfig();
+          if (!config.enabled || !config.redirect_uri) {
+            throw new Error("Google sign-in isn’t configured on the backend yet.");
+          }
+          const signedInUser = await exchangeGoogleCode(code, codeVerifier, nonce, config.redirect_uri);
+          setUser(signedInUser);
+        } else {
+          const currentUser = await getCurrentUser();
+          setUser(currentUser);
+        }
+      } catch (error) {
+        if (isCallback) {
+          setAuthError(error instanceof Error ? error.message : "Google sign-in failed. Please try again.");
+        }
+      } finally {
+        if (isCallback) setAuthLoading(false);
+      }
+    }
+
+    void restoreAuthentication();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -87,6 +147,53 @@ function App() {
   function navigate(view: View) {
     setActiveView(view);
     setMobileNavOpen(false);
+  }
+
+  async function beginGoogleSignIn() {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const config = await getGoogleAuthConfig();
+      if (!config.enabled || !config.client_id || !config.redirect_uri) {
+        throw new Error("Add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI to the backend environment.");
+      }
+      const stateBytes = crypto.getRandomValues(new Uint8Array(32));
+      const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
+      const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
+      const state = base64Url(stateBytes);
+      const verifier = base64Url(verifierBytes);
+      const nonce = base64Url(nonceBytes);
+      const challengeDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+      const challenge = base64Url(new Uint8Array(challengeDigest));
+      sessionStorage.setItem("google_oauth_state", state);
+      sessionStorage.setItem("google_oauth_verifier", verifier);
+      sessionStorage.setItem("google_oauth_nonce", nonce);
+      const params = new URLSearchParams({
+        client_id: config.client_id,
+        redirect_uri: config.redirect_uri,
+        response_type: "code",
+        scope: "openid email profile",
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        nonce,
+        prompt: "select_account",
+      });
+      window.location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+    } catch (error) {
+      setAuthLoading(false);
+      setAuthError(error instanceof Error ? error.message : "Could not start Google sign-in.");
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthError("");
+    try {
+      await signOut();
+      setUser(null);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Could not sign out.");
+    }
   }
 
   async function submitChat(event?: FormEvent<HTMLFormElement>, prompt = chatInput) {
@@ -133,11 +240,11 @@ function App() {
             <button onClick={() => setChatOpen(true)}>Talk to your guide <ArrowRight size={14} /></button>
             <div className="help-decoration">✳</div>
           </div>
-          <button className="profile-button">
-            <div className="avatar">A</div>
-            <span className="profile-copy"><strong>Arjun Mehta</strong><small>Student account</small></span>
-            <ChevronDown size={16} />
-          </button>
+          <div className="profile-button">
+            {user?.picture ? <img className="avatar user-picture" src={user.picture} alt="" referrerPolicy="no-referrer" /> : <div className="avatar">{user ? user.name.slice(0, 1).toUpperCase() : "A"}</div>}
+            <span className="profile-copy"><strong>{user?.name ?? "Arjun Mehta"}</strong><small>{user ? user.email : "Guest profile"}</small></span>
+            {user && <BadgeCheck size={16} className="profile-verified" />}
+          </div>
           <div className="sidebar-footnote"><span className="online-dot" /> A more thoughtful way forward</div>
         </div>
       </aside>
@@ -151,9 +258,22 @@ function App() {
               <span className="language-globe">अ</span>{language}<ChevronDown size={13} />
             </button>
             <button className="icon-button notification-button" aria-label="Notifications"><span className="notification-dot" /><CircleHelp size={19} /></button>
-            <div className="top-avatar">AM</div>
+            {user ? (
+              <>
+                <span className="signed-in-name">{user.name.split(" ")[0]}</span>
+                <button className="signout-button" onClick={handleSignOut}>Sign out</button>
+                {user.picture ? <img className="top-avatar user-picture" src={user.picture} alt="" referrerPolicy="no-referrer" /> : <div className="top-avatar">{user.name.slice(0, 1).toUpperCase()}</div>}
+              </>
+            ) : (
+              <button className="google-signin" onClick={beginGoogleSignIn} disabled={authLoading}>
+                <span className="google-g">G</span><span className="google-signin-label">{authLoading ? "Connecting…" : "Continue with Google"}</span><span className="google-signin-mobile">{authLoading ? "…" : "Sign in"}</span>
+              </button>
+            )}
           </div>
         </header>
+
+        {authError && <div className="auth-alert" role="alert"><CircleHelp size={15} /><span>{authError}</span><button aria-label="Dismiss" onClick={() => setAuthError("")}><X size={15} /></button></div>}
+        {authLoading && window.location.pathname === "/auth/callback" && <div className="auth-progress">Completing your secure Google sign-in…</div>}
 
         <div className="page-content">
           {activeView === "Overview" && (
@@ -445,3 +565,9 @@ function Counsellor({ input, answer, sources, demoMode, loading, error, onInput,
 }
 
 export default App;
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}

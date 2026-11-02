@@ -63,6 +63,20 @@ a { color: inherit; }
 .icon-button:hover { background: #eef2ec; }
 .notification-dot { width: 5px; height: 5px; position: absolute; top: 7px; right: 7px; border: 1px solid #f7f8f3; border-radius: 50%; background: #e59869; }
 .top-avatar { width: 29px; height: 29px; background: #dce9dc; color: #3c674b; font-size: 9px; }
+.signed-in-name { max-width: 92px; overflow: hidden; color: #67756a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.user-picture { display: block; object-fit: cover; }
+.google-signin { height: 34px; display: inline-flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #e3e8df; border-radius: 7px; background: #fff; color: #526357; font-size: 9px; font-weight: 600; cursor: pointer; transition: background .16s ease, border-color .16s ease; }
+.google-signin:hover { border-color: #cad9ca; background: #f9fbf8; }
+.google-signin:disabled { color: #929e93; cursor: wait; }
+.google-signin-mobile { display: none; }
+.google-g { color: #4285f4; font-family: Arial, sans-serif; font-size: 14px; font-weight: 700; }
+.signout-button { padding: 6px 8px; border: 1px solid #e5e9e3; border-radius: 6px; background: #fff; color: #748176; font-size: 8px; cursor: pointer; }
+.signout-button:hover { border-color: #d7e4d6; color: #426d4e; }
+.profile-verified { color: #6a9671; }
+.auth-alert { display: flex; align-items: center; gap: 9px; margin: 12px 4.1% 0; padding: 10px 12px; border: 1px solid #f0d7c9; border-radius: 7px; background: #fff7f2; color: #a5684b; font-size: 10px; line-height: 1.5; }
+.auth-alert > span { flex: 1; }
+.auth-alert button { display: grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.auth-progress { margin: 12px 4.1% 0; padding: 10px 12px; border: 1px solid #dfe9dc; border-radius: 7px; background: #f2f7ef; color: #67806b; font-size: 10px; }
 .page-content { max-width: 1390px; margin: 0 auto; padding: 35px 4.1% 34px; }
 .welcome-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 25px; }
 .eyebrow, .section-kicker, .pathway-label { display: flex; align-items: center; gap: 8px; color: #849186; font-size: 9px; font-weight: 700; letter-spacing: 1.15px; }
@@ -338,6 +352,7 @@ h1, h2, h3, p { margin-top: 0; }
   .hero-content { max-width: 390px; }
   .journey-grid { grid-template-columns: 1.3fr 1fr 1fr; }
   .page-footer { padding-right: 3.2%; padding-left: 3.2%; }
+  .auth-alert, .auth-progress { margin-right: 3.2%; margin-left: 3.2%; }
 }
 @media (max-width: 820px) {
   .sidebar { width: 252px; transform: translateX(-105%); transition: transform .22s ease; box-shadow: 10px 0 30px rgba(29,48,35,.07); }
@@ -359,6 +374,9 @@ h1, h2, h3, p { margin-top: 0; }
   .topbar { height: 57px; padding: 0 15px; }
   .breadcrumb { gap: 5px; font-size: 9px; }
   .topbar-actions { gap: 7px; }
+  .google-signin { gap: 6px; padding: 0 8px; font-size: 8px; }
+  .signed-in-name { display: none; }
+  .signout-button { padding: 5px 6px; font-size: 7px; }
   .language-button { padding: 5px 2px; }
   .notification-button { display: none; }
   .page-content { padding: 25px 16px 25px; }
@@ -389,6 +407,7 @@ h1, h2, h3, p { margin-top: 0; }
   .bottom-nudge > span { padding-top: 3px; line-height: 1.5; }
   .bottom-nudge button { white-space: nowrap; }
   .page-footer { flex-direction: column; gap: 5px; padding: 0 16px 15px; line-height: 1.5; }
+  .auth-alert, .auth-progress { margin-right: 16px; margin-left: 16px; }
   .page-intro h1 { font-size: 35px; }
   .page-intro > p { font-size: 10px; }
   .explorer-toolbar { gap: 6px; }
@@ -431,6 +450,11 @@ h1, h2, h3, p { margin-top: 0; }
   .evidence-authority { font-size: 9px; }
   .evidence-copy h3 { line-height: 1.5; }
   .chat-panel { width: 100%; }
+}
+@media (max-width: 380px) {
+  .google-signin-label { display: none; }
+  .google-signin-mobile { display: inline; }
+  .breadcrumb > span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

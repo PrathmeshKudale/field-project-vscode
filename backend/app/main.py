@@ -3,14 +3,25 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2 import id_token
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .database import Base, SessionLocal, engine
-from .models import Conversation, Course, Message
-from .schemas import ChatRequest, ChatResponse, CourseResponse, SourceReference
+from .models import Conversation, Course, Message, User
+from .schemas import (
+    ChatRequest,
+    ChatResponse,
+    CourseResponse,
+    GoogleAuthConfig,
+    GoogleCodeExchangeRequest,
+    SourceReference,
+    UserResponse,
+)
 from .seed import seed_courses
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -26,6 +37,14 @@ CORS_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI", "http://localhost:5173/auth/callback"
+).strip()
+GOOGLE_SESSION_COOKIE = "kaushalsetu_google_session"
+GOOGLE_SESSION_MAX_AGE = 3600
+COOKIE_SECURE = GOOGLE_REDIRECT_URI.startswith("https://")
 
 
 @asynccontextmanager
@@ -45,7 +64,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -83,6 +102,144 @@ def list_courses(
     if category and category.lower() != "all courses":
         statement = statement.where(Course.category.ilike(category.strip()))
     return db.scalars(statement).all()
+
+
+def verify_google_token(token: str, expected_nonce: str | None = None) -> dict:
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
+    try:
+        claims = id_token.verify_oauth2_token(
+            token,
+            GoogleRequest(),
+            GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=30,
+        )
+    except (GoogleAuthError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Google session is invalid or expired.") from exc
+    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(status_code=401, detail="Google session issuer is invalid.")
+    if expected_nonce is not None and claims.get("nonce") != expected_nonce:
+        raise HTTPException(status_code=401, detail="Google sign-in nonce did not match.")
+    if not claims.get("email") or not claims.get("sub"):
+        raise HTTPException(status_code=401, detail="Google did not provide a verified account.")
+    return claims
+
+
+def serialize_user(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        picture=user.picture,
+        email_verified=user.email_verified,
+    )
+
+
+@app.get("/api/auth/google/config", response_model=GoogleAuthConfig)
+def google_auth_config():
+    return GoogleAuthConfig(
+        enabled=bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+        client_id=GOOGLE_CLIENT_ID or None,
+        redirect_uri=GOOGLE_REDIRECT_URI if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET else None,
+    )
+
+
+@app.post("/api/auth/google/exchange", response_model=UserResponse)
+async def google_code_exchange(payload: GoogleCodeExchangeRequest, response: Response, db: DbSession):
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured on the backend.")
+    if payload.redirect_uri != GOOGLE_REDIRECT_URI:
+        raise HTTPException(status_code=400, detail="Google redirect URI does not match backend configuration.")
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": payload.code,
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "code_verifier": payload.code_verifier,
+                    "nonce": payload.nonce,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": GOOGLE_REDIRECT_URI,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(status_code=504, detail="Google sign-in timed out. Please try again.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Could not connect to Google sign-in.") from exc
+
+    if token_response.is_error:
+        raise HTTPException(
+            status_code=401,
+            detail="Google could not complete sign-in. Check OAuth settings and try again.",
+        )
+    try:
+        google_token = token_response.json()["id_token"]
+        claims = verify_google_token(google_token, expected_nonce=payload.nonce)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Google returned an invalid sign-in response.") from exc
+
+    email = str(claims["email"]).lower()
+    google_sub = str(claims["sub"])
+    user = db.scalar(select(User).where(User.google_sub == google_sub))
+    if user is None:
+        user = db.scalar(select(User).where(User.email == email))
+        if user is not None and user.google_sub != google_sub:
+            raise HTTPException(
+                status_code=409,
+                detail="This email is already linked to a different Google account.",
+            )
+    if claims.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="Verify your Google email address before signing in.")
+    if user is None:
+        user = User(google_sub=google_sub, email=email, name=str(claims.get("name") or email))
+        db.add(user)
+    user.email = email
+    user.name = str(claims.get("name") or email)
+    user.picture = claims.get("picture")
+    user.email_verified = claims.get("email_verified") is True
+    db.commit()
+    db.refresh(user)
+
+    response.set_cookie(
+        key=GOOGLE_SESSION_COOKIE,
+        value=google_token,
+        max_age=GOOGLE_SESSION_MAX_AGE,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="none" if COOKIE_SECURE else "lax",
+        path="/",
+    )
+    return serialize_user(user)
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def current_user(
+    db: DbSession,
+    google_session: Annotated[str | None, Cookie(alias=GOOGLE_SESSION_COOKIE)] = None,
+):
+    if not google_session:
+        raise HTTPException(status_code=401, detail="Sign in to continue.")
+    claims = verify_google_token(google_session)
+    user = db.scalar(select(User).where(User.google_sub == str(claims["sub"])))
+    if user is None:
+        raise HTTPException(status_code=401, detail="Google account is not registered.")
+    return serialize_user(user)
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(
+        key=GOOGLE_SESSION_COOKIE,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="none" if COOKIE_SECURE else "lax",
+        path="/",
+    )
+    return {"status": "signed_out"}
 
 
 async def generate_gemini_answer(message: str, courses: list[Course]) -> str:

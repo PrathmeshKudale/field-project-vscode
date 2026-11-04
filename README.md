@@ -14,7 +14,11 @@ An evidence-aware education and career exploration MVP for students and families
 
 ### 1. Start the API
 
-Copy `.env.example` to `.env` and set `GEMINI_API_KEY` to enable Gemini. Keep it server-side; never add it to frontend variables or source control. Without a key, the counsellor uses the clearly labeled demo responses.
+Copy `.env.example` to `.env` and set `GEMINI_API_KEY` to enable Gemini and live web research. You can create a key in [Google AI Studio](https://aistudio.google.com/apikey); check the current quota, availability, and billing terms for your account. Keep the key server-side in the backend `.env` only; never add it to frontend variables, source control, or chat. Without a key, the counsellor uses the clearly labeled demo responses and live research returns a configuration error instead of fabricated results.
+
+The course catalogue is still a small, locally seeded set of examples. Use the live research panels in Explore courses, Career pathways, Scholarships, and Evidence passport to search current web pages and see citations. Search queries are sent to Gemini and are not saved by this app; do not include sensitive personal information. Skill notes and confidence ratings are stored in the current browser for guests. When signed in with Google, the skill passport syncs to the account and can be accessed across devices; existing guest skills are merged into the account on sign-in.
+
+If Gemini returns `PERMISSION_DENIED` because its API-key consumer or project is suspended, resolve the suspension in Google Cloud or create a key in an active project. Update `GEMINI_API_KEY` in the backend `.env` and restart FastAPI. Repeated retries with a key from the suspended project will not work.
 
 Google sign-in uses an OAuth 2.0 authorization-code flow with PKCE, state, and nonce checks. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in the backend `.env`. Register the exact redirect URI in Google Cloud Console. The client secret stays on the backend; the browser receives only the public client ID. The backend verifies Google's ID token, stores the account, and keeps the sign-in token in an HttpOnly cookie. For production, use a custom domain for both frontend and API when possible (for example `app.example.com` and `api.example.com`) so browsers can share the secure session cookie reliably.
 
@@ -70,5 +74,7 @@ If Docker is available, `docker compose up -d db` starts the PostgreSQL service 
 - `GET /api/health` — health check
 - `GET /api/courses?search=&category=` — searchable course catalogue
 - `POST /api/counsellor/chat` — Gemini-backed guidance when configured; otherwise demo guidance; saves the conversation and messages
+- `POST /api/research/search` — current Google Search-grounded research with source links; requires the backend `GEMINI_API_KEY`
+- `GET /api/me/skills` and `PUT /api/me/skills` — read and replace the signed-in user's skill passport; requires the Google session cookie
 
 The UI shows API errors rather than silently presenting stale or invented course results. The catalogue is seeded with illustrative records and is not an authoritative eligibility or accreditation database.

@@ -28,6 +28,21 @@ export interface AuthUser {
   email_verified: boolean;
 }
 
+export interface SkillRecord {
+  id: string;
+  name: string;
+  level: number;
+  evidence: string;
+}
+
+export type ResearchTopic = "courses" | "pathways" | "scholarships" | "verification";
+
+export interface LiveResearchResult {
+  answer: string;
+  sources: { title: string; url: string }[];
+  generated_at: string;
+}
+
 interface GoogleAuthConfig {
   enabled: boolean;
   client_id: string | null;
@@ -91,6 +106,19 @@ export async function sendCounsellorMessage(message: string): Promise<ChatRespon
   return response.json() as Promise<ChatResponse>;
 }
 
+export async function searchLiveResearch(
+  query: string,
+  topic: ResearchTopic,
+): Promise<LiveResearchResult> {
+  const response = await request(apiUrl("/api/research/search"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, topic }),
+  });
+  await ensureOk(response, "Live web research failed");
+  return response.json() as Promise<LiveResearchResult>;
+}
+
 export async function getGoogleAuthConfig(): Promise<GoogleAuthConfig> {
   const response = await request(apiUrl("/api/auth/google/config"));
   await ensureOk(response, "Google sign-in configuration unavailable");
@@ -126,4 +154,21 @@ export async function signOut(): Promise<void> {
     credentials: "include",
   });
   await ensureOk(response, "Could not sign out");
+}
+
+export async function getMySkills(): Promise<SkillRecord[]> {
+  const response = await request(apiUrl("/api/me/skills"), { credentials: "include" });
+  await ensureOk(response, "Could not load your synced skills");
+  return response.json() as Promise<SkillRecord[]>;
+}
+
+export async function replaceMySkills(skills: SkillRecord[]): Promise<SkillRecord[]> {
+  const response = await request(apiUrl("/api/me/skills"), {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ skills }),
+  });
+  await ensureOk(response, "Could not sync your skills");
+  return response.json() as Promise<SkillRecord[]>;
 }

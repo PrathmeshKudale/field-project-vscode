@@ -40,6 +40,22 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    skills: Mapped[list["UserSkill"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class UserSkill(Base):
+    __tablename__ = "user_skills"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    evidence: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    user: Mapped[User] = relationship(back_populates="skills")
 
 
 class Conversation(Base):

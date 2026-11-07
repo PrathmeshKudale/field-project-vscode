@@ -53,6 +53,10 @@ GOOGLE_SESSION_MAX_AGE = 3600
 COOKIE_SECURE = GOOGLE_REDIRECT_URI.startswith("https://")
 
 
+class GeminiCredentialsUnavailable(Exception):
+    pass
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -474,23 +478,16 @@ async def generate_gemini_answer(message: str, courses: list[Course]) -> str:
 
     if response.is_error:
         if response.status_code == 403 and has_suspended_gemini_consumer(response):
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Google has suspended the project linked to GEMINI_API_KEY. Resolve the suspension "
-                    "in Google Cloud, or create a key in an active project, update the backend .env, "
-                    "and restart the API."
-                ),
+            raise GeminiCredentialsUnavailable(
+                "Google suspended the project linked to GEMINI_API_KEY."
             )
         if response.status_code == 400 and has_invalid_gemini_key(response):
-            raise HTTPException(
-                status_code=503,
-                detail="GEMINI_API_KEY is invalid. Add a valid Google AI Studio key to the backend .env and restart the API.",
+            raise GeminiCredentialsUnavailable(
+                "GEMINI_API_KEY is invalid."
             )
         if response.status_code in (401, 403):
-            raise HTTPException(
-                status_code=503,
-                detail="Gemini rejected the server API key. Check GEMINI_API_KEY in backend settings.",
+            raise GeminiCredentialsUnavailable(
+                "Gemini rejected the configured server API key."
             )
         if response.status_code == 429:
             raise HTTPException(
@@ -523,7 +520,38 @@ async def counsellor_chat(payload: ChatRequest, db: DbSession):
         raise HTTPException(status_code=422, detail="Message must not be blank.")
 
     normalized = message_text.lower()
-    if any(term in normalized for term in ("commerce", "business", "bba", "account")):
+    if normalized.strip("!?., ") in {
+        "hi",
+        "hello",
+        "hey",
+        "namaste",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }:
+        categories = ("Degree", "Vocational", "Professional")
+        answer = (
+            "Hi! I can help you compare study routes, practical training, scholarships, or skills to build. "
+            "Tell me your current class or qualification, your state, and one subject or kind of work you enjoy. "
+            "I’ll use that to suggest a few starting points. Any suggestions here are guidance, not an "
+            "eligibility decision."
+        )
+    elif any(term in normalized for term in ("scholarship", "financial", "fee", "funding")):
+        categories = ("Degree", "Vocational")
+        answer = (
+            "A good first step is the National Scholarship Portal. Schemes, deadlines, and eligibility can "
+            "change, so check the current official notice and apply only through the named official channel. "
+            "The course suggestions here are examples; this guided response does not match your profile to live schemes."
+        )
+    elif any(term in normalized for term in ("college", "institution", "verify", "recognition", "approved")):
+        categories = ("Degree", "Diploma")
+        answer = (
+            "To check an institution, first identify the exact course, campus, and academic year. Then verify "
+            "them with the authority relevant to that type of institution and programme. A missing result "
+            "isn't proof that a course is unrecognised. This guided response links to official starting points "
+            "but does not perform a live recognition check."
+        )
+    elif any(term in normalized for term in ("commerce", "business", "bba", "account")):
         categories = ("Degree", "Professional")
         answer = (
             "With a commerce background and an interest in business or technology, you could compare "
@@ -540,20 +568,14 @@ async def counsellor_chat(payload: ChatRequest, db: DbSession):
             "rules. Compare the practical learning, duration, and next-step possibilities before deciding. "
             "These are starting points, not a confirmation of eligibility."
         )
-    elif any(term in normalized for term in ("scholarship", "financial", "fee", "funding")):
-        categories = ("Degree", "Vocational")
+    elif any(term in normalized for term in ("technology", "tech", "computer", "software", "coding", "programming", "digital", "data")):
+        categories = ("Degree", "Professional")
         answer = (
-            "A good first step is the National Scholarship Portal. Schemes, deadlines, and eligibility can "
-            "change, so check the current official notice and apply only through the named official channel. "
-            "The course suggestions here are examples; this demo does not match your profile to live schemes."
-        )
-    elif any(term in normalized for term in ("college", "institution", "verify", "recognition", "approved")):
-        categories = ("Degree", "Diploma")
-        answer = (
-            "To check an institution, first identify the exact course, campus, and academic year. Then verify "
-            "them with the authority relevant to that type of institution and programme. A missing result "
-            "isn't proof that a course is unrecognised. This demo links to official starting points but does "
-            "not perform a live recognition check."
+            "If you’re curious about technology, compare a computing degree such as BCA with a shorter "
+            "data-analytics course. A degree is a longer academic route; a short course can help you try "
+            "specific tools and see what interests you. Check each provider’s current entry requirements, "
+            "recognition, costs, and course content. Tell me your current class or qualification and your "
+            "state, and I can help narrow the comparison. These catalogue examples are not live admissions."
         )
     else:
         categories = ("Degree", "Vocational", "Professional")
@@ -570,8 +592,20 @@ async def counsellor_chat(payload: ChatRequest, db: DbSession):
     ).limit(3)
     recommendations = db.scalars(statement).all()
     demo_mode = not GEMINI_API_KEY
+    demo_notice = (
+        "Gemini is not configured. This is a guided demo response."
+        if demo_mode
+        else None
+    )
     if not demo_mode:
-        answer = await generate_gemini_answer(message_text, recommendations)
+        try:
+            answer = await generate_gemini_answer(message_text, recommendations)
+        except GeminiCredentialsUnavailable as exc:
+            demo_mode = True
+            demo_notice = (
+                f"{exc} Showing a guided demo response instead. "
+                "Restore the Google Cloud project or configure a key from an active project to re-enable Gemini."
+            )
 
     conversation = Conversation()
     conversation.messages = [
@@ -597,4 +631,5 @@ async def counsellor_chat(payload: ChatRequest, db: DbSession):
         recommendations=recommendations,
         sources=list(source_by_url.values()),
         demo_mode=demo_mode,
+        demo_notice=demo_notice,
     )

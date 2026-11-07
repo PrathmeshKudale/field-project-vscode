@@ -34,6 +34,7 @@ class ChatResponse(BaseModel):
     recommendations: list[CourseResponse]
     sources: list[SourceReference]
     demo_mode: bool = True
+    demo_notice: str | None = None
 
 
 class LiveResearchRequest(BaseModel):

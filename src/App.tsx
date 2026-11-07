@@ -16,12 +16,15 @@ import {
   Lightbulb,
   Menu,
   MessageCircle,
+  Pencil,
+  Plus,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
   Target,
   TrendingUp,
+  Trash2,
   WalletCards,
   X,
 } from "lucide-react";
@@ -93,7 +96,10 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatSources, setChatSources] = useState<{ title: string; url: string }[]>([]);
+  const [chatRecommendations, setChatRecommendations] = useState<Course[]>([]);
+  const [chatLastQuestion, setChatLastQuestion] = useState("");
   const [chatDemoMode, setChatDemoMode] = useState<boolean | null>(null);
+  const [chatDemoNotice, setChatDemoNotice] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -233,11 +239,16 @@ function App() {
     setChatLoading(true);
     setChatError("");
     setChatAnswer("");
+    setChatDemoNotice("");
+    setChatLastQuestion(message);
     try {
       const result = await sendCounsellorMessage(message);
       setChatAnswer(result.answer);
       setChatSources(result.sources);
+      setChatRecommendations(result.recommendations);
       setChatDemoMode(result.demo_mode);
+      setChatDemoNotice(result.demo_notice ?? "");
+      setChatInput("");
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
     } finally {
@@ -323,8 +334,11 @@ function App() {
         <Counsellor
           input={chatInput}
           answer={chatAnswer}
+          lastQuestion={chatLastQuestion}
+          recommendations={chatRecommendations}
           sources={chatSources}
           demoMode={chatDemoMode}
+          demoNotice={chatDemoNotice}
           loading={chatLoading}
           error={chatError}
           onInput={setChatInput}
@@ -644,6 +658,11 @@ function SkillBuilder({ user }: { user: AuthUser | null }) {
   const [skillEvidence, setSkillEvidence] = useState("");
   const [skillLevel, setSkillLevel] = useState(1);
   const [skillFormError, setSkillFormError] = useState("");
+  const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
+  const [editSkillName, setEditSkillName] = useState("");
+  const [editSkillEvidence, setEditSkillEvidence] = useState("");
+  const [editSkillLevel, setEditSkillLevel] = useState(1);
+  const [editSkillError, setEditSkillError] = useState("");
   const [storageReady, setStorageReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [storageStatus, setStorageStatus] = useState<SkillStorageStatus>("loading");
@@ -754,7 +773,10 @@ function SkillBuilder({ user }: { user: AuthUser | null }) {
   function addSkill(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = skillName.trim();
-    if (!name) return;
+    if (!name) {
+      setSkillFormError("Enter a skill to add it to your passport.");
+      return;
+    }
     if (skills.some((skill) => skill.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
       setSkillFormError("That skill is already in your passport.");
       return;
@@ -775,6 +797,50 @@ function SkillBuilder({ user }: { user: AuthUser | null }) {
     setSkillFormError("");
   }
 
+  function addSuggestedSkill(name: string) {
+    if (skills.length >= 100) {
+      setSkillFormError("Your passport can contain up to 100 skills.");
+      return;
+    }
+    if (skills.some((skill) => skill.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setSkillFormError(`${name} is already in your passport.`);
+      return;
+    }
+    setSkills((current) => [...current, {
+      id: crypto.randomUUID(),
+      name,
+      level: 1,
+      evidence: "",
+    }]);
+    setSkillFormError("");
+  }
+
+  function startEditingSkill(skill: SkillRecord) {
+    setEditingSkillId(skill.id);
+    setEditSkillName(skill.name);
+    setEditSkillEvidence(skill.evidence);
+    setEditSkillLevel(skill.level);
+    setEditSkillError("");
+  }
+
+  function saveEditedSkill(event: FormEvent<HTMLFormElement>, id: string) {
+    event.preventDefault();
+    const name = editSkillName.trim();
+    if (!name) {
+      setEditSkillError("Enter a name for this skill.");
+      return;
+    }
+    if (skills.some((skill) => skill.id !== id && skill.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      setEditSkillError("That skill is already in your passport.");
+      return;
+    }
+    setSkills((current) => current.map((skill) => skill.id === id
+      ? { ...skill, name, evidence: editSkillEvidence.trim(), level: editSkillLevel }
+      : skill));
+    setEditingSkillId(null);
+    setEditSkillError("");
+  }
+
   function retrySkillSync() {
     setStorageError("");
     if (!storageReady) {
@@ -792,24 +858,56 @@ function SkillBuilder({ user }: { user: AuthUser | null }) {
     <>
       <PageIntro eyebrow="YOUR GROWING TOOLKIT" title={<>Skills make your<br /><span>next step possible.</span></>} copy="A skill passport can help you reflect on what you already bring, and what you’d like to learn next." />
       <div className="skill-profile-card">
-        <div className="skill-profile-top"><div><span className="pathway-label">YOUR SKILL PASSPORT</span><h2>{skills.length ? `${skills.length} skill${skills.length === 1 ? "" : "s"} in your toolkit` : "Start with what you know"}</h2></div><span className="profile-progress">{storageStatus === "loading" ? "Loading…" : storageStatus === "saving" ? "Syncing…" : storageStatus === "error" ? "Sync issue" : user ? "Synced to your account" : "Saved in this browser"}</span></div>
-        {skills.length > 0 && <div className="skill-bars">{skills.map((skill, index) => <div className="skill-row saved-skill-row" key={skill.id}>
-          <div className="skill-label"><span>{skill.name}</span><label>Confidence <select aria-label={`Confidence for ${skill.name}`} value={skill.level} onChange={(event) => updateSkillLevel(skill.id, Number(event.target.value))}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level} / 5</option>)}</select></label></div>
-          <div className="skill-track"><span className={["skill-green", "skill-lavender", "skill-peach"][index % 3]} style={{ width: `${skill.level * 20}%` }} /></div>
-          {skill.evidence && <p className="skill-evidence">{skill.evidence}</p>}
-          <button className="skill-remove" type="button" onClick={() => setSkills((current) => current.filter((entry) => entry.id !== skill.id))}>Remove</button>
-        </div>)}</div>}
-        {!skills.length && <p className="skill-empty">Add a skill and a real example of when you used it. Your confidence rating is for reflection only, not a formal assessment.</p>}
-        <form className="skill-add-form" onSubmit={addSkill}>
-          <label>Skill<input value={skillName} onChange={(event) => { setSkillName(event.target.value); setSkillFormError(""); }} placeholder="e.g. Spreadsheet basics" maxLength={80} required disabled={!storageReady} /></label>
-          <label>Example or practice note<input value={skillEvidence} onChange={(event) => setSkillEvidence(event.target.value)} placeholder="Where have you used or practised it?" maxLength={300} disabled={!storageReady} /></label>
-          <label>Confidence<select value={skillLevel} onChange={(event) => setSkillLevel(Number(event.target.value))} disabled={!storageReady}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level} / 5</option>)}</select></label>
+        <div className="skill-profile-top">
+          <div><span className="pathway-label">YOUR SKILL PASSPORT</span><h2>{skills.length ? `${skills.length} skill${skills.length === 1 ? "" : "s"} in your toolkit` : "Start with what you know"}</h2></div>
+          <span className={`profile-progress sync-${storageStatus}`} role="status">
+            <span className="sync-status-dot" />
+            {storageStatus === "loading" ? "Loading your skills…" : storageStatus === "saving" ? "Saving changes…" : storageStatus === "error" ? "Sync needs attention" : user ? "Synced to your account" : "Saved in this browser"}
+          </span>
+        </div>
+        <p className="skill-section-description">A personal reflection, not a test or a score. Add skills you want to grow and examples from your own experience.</p>
+        {skills.length > 0 && <div className="skill-list">{skills.map((skill) => (
+          <article className="skill-item-card" key={skill.id}>
+            {editingSkillId === skill.id ? (
+              <form className="skill-edit-form" onSubmit={(event) => saveEditedSkill(event, skill.id)} noValidate>
+                <label>Skill name<input autoFocus value={editSkillName} onChange={(event) => { setEditSkillName(event.target.value); setEditSkillError(""); }} maxLength={80} /></label>
+                <label>Practice example<input value={editSkillEvidence} onChange={(event) => setEditSkillEvidence(event.target.value)} placeholder="A project, task, or moment you used this skill" maxLength={300} /></label>
+                <label>How confident do you feel?<select value={editSkillLevel} onChange={(event) => setEditSkillLevel(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level} of 5</option>)}</select></label>
+                {editSkillError && <p className="skill-form-error" role="alert">{editSkillError}</p>}
+                <div className="skill-item-actions"><button className="skill-save-button" type="submit"><Check size={14} /> Save changes</button><button className="skill-cancel-button" type="button" onClick={() => setEditingSkillId(null)}>Cancel</button></div>
+              </form>
+            ) : (
+              <>
+                <div className="skill-item-heading">
+                  <div className="skill-item-copy"><h3>{skill.name}</h3><p>{skill.evidence || "Add a practice example to remember where you used this skill."}</p></div>
+                  <div className="skill-item-actions">
+                    <button className="skill-edit-button" type="button" onClick={() => startEditingSkill(skill)} aria-label={`Edit ${skill.name}`}><Pencil size={14} /><span>Edit</span></button>
+                    <button className="skill-remove-button" type="button" onClick={() => setSkills((current) => current.filter((entry) => entry.id !== skill.id))} aria-label={`Remove ${skill.name}`}><Trash2 size={14} /><span>Remove</span></button>
+                  </div>
+                </div>
+                <div className="skill-confidence-row">
+                  <label htmlFor={`confidence-${skill.id}`}>My confidence</label>
+                  <select id={`confidence-${skill.id}`} value={skill.level} onChange={(event) => updateSkillLevel(skill.id, Number(event.target.value))} aria-label={`Confidence for ${skill.name}`}>
+                    {[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level} of 5</option>)}
+                  </select>
+                </div>
+                <div className="skill-track" role="img" aria-label={`Self-rated confidence: ${skill.level} out of 5`}><span className={["skill-green", "skill-lavender", "skill-peach"][skills.indexOf(skill) % 3]} style={{ width: `${skill.level * 20}%` }} /></div>
+              </>
+            )}
+          </article>
+        ))}</div>}
+        {!skills.length && storageReady && <div className="skill-empty-state"><div className="skill-empty-icon"><Target size={19} /></div><div><strong>Your passport starts with your experience</strong><p>Add one skill you use at school, at work, at home, or in a hobby. You can update or remove it any time.</p></div></div>}
+        <div className="skill-quick-start"><span>QUICK START</span><div>{["Communication", "Digital skills", "Problem solving"].map((name) => <button key={name} type="button" onClick={() => addSuggestedSkill(name)} disabled={!storageReady}><Plus size={13} /> {name}</button>)}</div></div>
+        <form className="skill-add-form" onSubmit={addSkill} noValidate>
+          <label>Skill<input value={skillName} onChange={(event) => { setSkillName(event.target.value); setSkillFormError(""); }} placeholder="e.g. Spreadsheet basics" maxLength={80} disabled={!storageReady} /></label>
+          <label>Practice example <span>(optional)</span><input value={skillEvidence} onChange={(event) => setSkillEvidence(event.target.value)} placeholder="Where have you used or practised it?" maxLength={300} disabled={!storageReady} /></label>
+          <label>Confidence<select value={skillLevel} onChange={(event) => setSkillLevel(Number(event.target.value))} disabled={!storageReady}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level} of 5</option>)}</select></label>
           <button className="primary-button" type="submit" disabled={!storageReady}><Sparkles size={15} /> Add skill <ArrowRight size={15} /></button>
         </form>
         {skillFormError && <p className="live-research-error" role="alert">{skillFormError}</p>}
         {storageError && <p className="live-research-error" role="alert">{storageError}</p>}
         {storageStatus === "error" && <button className="skill-retry" type="button" onClick={retrySkillSync}>Retry sync</button>}
-        <div className="skill-note"><Lightbulb size={16} /><span>Self-reflection is not a professional assessment. {user ? "When signed in, your skills sync to your account so you can access them on other devices." : "Guest skills stay in this browser; sign in to sync them across devices."}</span></div>
+        <div className="skill-note"><Lightbulb size={16} /><span>Your ratings are self-reported reflection, not an assessment. {user ? "Changes sync to your account so you can access this passport on other devices." : "Guest skills stay in this browser; sign in to sync your passport across devices."}</span></div>
       </div>
       <div className="section-heading"><div><div className="section-kicker">GENTLE NEXT STEPS</div><h2>Learning can be practical</h2></div></div>
       <div className="learning-grid"><LearningCard icon={<BookOpen size={18} />} title="Explore digital basics" text="Build confidence with everyday digital tools." source="Bharat Skills" href="https://bharatskills.gov.in/" /><LearningCard icon={<MessageCircle size={18} />} title="Practice communication" text="Try small ways to share an idea clearly." source="Your own pace" href="" /><LearningCard icon={<Target size={18} />} title="Pick one thing to try" text="A project can be a great place to start." source="One step at a time" href="" /></div>
@@ -846,11 +944,14 @@ function EvidencePassport() {
   );
 }
 
-function Counsellor({ input, answer, sources, demoMode, loading, error, onInput, onClose, onSubmit }: {
+function Counsellor({ input, answer, lastQuestion, recommendations, sources, demoMode, demoNotice, loading, error, onInput, onClose, onSubmit }: {
   input: string;
   answer: string;
+  lastQuestion: string;
+  recommendations: Course[];
   sources: { title: string; url: string }[];
   demoMode: boolean | null;
+  demoNotice: string;
   loading: boolean;
   error: string;
   onInput: (value: string) => void;
@@ -865,16 +966,20 @@ function Counsellor({ input, answer, sources, demoMode, loading, error, onInput,
         <div className="chat-body">
           <div className="chat-day">A CONVERSATION, NOT A TEST</div>
           <div className="assistant-message"><span className="chat-message-label">KAUSHALSETU GUIDE <span>JUST NOW</span></span><p>Hi there! There’s no wrong place to begin. Tell me what you’re curious about, or where you are in your learning journey, and we’ll explore some options together.</p></div>
-          <div className="suggested-label">A few ways to get started</div>
-          <div className="suggested-prompts">{starterQuestions.map((question) => <button key={question} onClick={() => onSubmit(undefined, question)}>{question}<ArrowUpRight size={14} /></button>)}</div>
+          {!lastQuestion && <>
+            <div className="suggested-label">A few ways to get started</div>
+            <div className="suggested-prompts">{starterQuestions.map((question) => <button key={question} onClick={() => onSubmit(undefined, question)}>{question}<ArrowUpRight size={14} /></button>)}</div>
+          </>}
           {loading && <div className="assistant-message chat-loading"><span className="chat-message-label">KAUSHALSETU GUIDE</span><p>Thinking through a few possibilities<span className="typing-dots"><i /><i /><i /></span></p></div>}
-          {answer && <div className="assistant-message answer-message"><span className="chat-message-label">A PLACE TO START <span>{demoMode ? "GUIDED DEMO" : "GEMINI AI"}</span></span><p>{answer}</p>{sources.length > 0 && <div className="chat-sources"><strong>Useful official starting points</strong>{sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={12} /></a>)}</div>}</div>}
+          {lastQuestion && <div className="user-question" aria-label="Your message"><span>YOU</span><p>{lastQuestion}</p></div>}
+          {answer && <div className="assistant-message answer-message"><span className="chat-message-label">A PLACE TO START <span>{demoMode ? "GUIDED RESPONSE" : "GEMINI AI"}</span></span><p>{answer}</p>{recommendations.length > 0 && <div className="chat-recommendations"><strong>Options from the course catalogue</strong><span>Examples to explore — check current requirements with each institution.</span>{recommendations.map((course) => <a className="chat-recommendation" href={course.source_url} key={course.id} target="_blank" rel="noreferrer"><span><strong>{course.title}</strong><small>{course.category} · {course.duration} · {course.qualification}</small></span><ExternalLink size={14} /></a>)}</div>}{sources.length > 0 && <div className="chat-sources"><strong>Official starting points</strong>{sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title} <ExternalLink size={12} /></a>)}</div>}</div>}
+          {demoNotice && <div className="chat-demo-notice" role="status">{demoNotice}</div>}
           {error && <div className="chat-error">{error}</div>}
-          <div className="demo-disclaimer"><ShieldCheck size={14} /> {answer ? `${demoMode ? "Guided demo" : "Gemini AI"} guidance is a starting point, not verified eligibility advice. Confirm details with official sources.` : "Your message is answered by Gemini when configured; otherwise this is a guided demo. Verify eligibility with official sources."}</div>
+          <div className="demo-disclaimer"><ShieldCheck size={14} /> {answer ? `${demoMode ? "This guided response" : "Gemini AI guidance"} is a starting point, not verified eligibility advice. Confirm details with official sources.` : "Gemini answers are used when the provider is available. If it is unavailable, you’ll get a clearly labelled guided response instead."}</div>
         </div>
         <form className="chat-composer" onSubmit={(event) => onSubmit(event)}>
           <textarea value={input} onChange={(event) => onInput(event.target.value)} placeholder="Tell me what’s on your mind…" rows={2} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSubmit(); } }} />
-          <div className="composer-bottom"><span><span className="composer-dot" /> Messages are saved in the demo database</span><button type="submit" disabled={loading || !input.trim()} aria-label="Send message"><Send size={16} /></button></div>
+          <div className="composer-bottom"><span><span className="composer-dot" /> Conversations are saved to this service</span><button type="submit" disabled={loading || !input.trim()} aria-label="Send message"><Send size={16} /></button></div>
         </form>
       </section>
     </div>

@@ -18,6 +18,7 @@ export interface ChatResponse {
   recommendations: Course[];
   sources: { title: string; url: string }[];
   demo_mode: boolean;
+  demo_notice: string | null;
 }
 
 export interface AuthUser {

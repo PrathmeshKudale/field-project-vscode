@@ -49,7 +49,7 @@ Open the Vite URL shown in the terminal (usually `http://localhost:5173`).
 Vercel hosts the Vite frontend; it does not start this FastAPI application automatically. Deploy the FastAPI app to a Python host (for example Render, Railway, or a separately configured server) and set these backend environment variables there:
 
 - `GEMINI_API_KEY` — secret Gemini API key
-- `GEMINI_MODEL` — optional; defaults to `gemini-2.5-flash`
+- `GEMINI_MODEL` — optional; defaults to `gemini-3.5-flash`
 - `DATABASE_URL` — persistent PostgreSQL connection string for production
 - `CORS_ORIGINS` — exact frontend origin(s), comma-separated (for example `https://your-project.vercel.app`)
 - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` — Google OAuth web client credentials (secret is backend-only)

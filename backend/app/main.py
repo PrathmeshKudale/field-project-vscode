@@ -31,7 +31,7 @@ from .schemas import (
 from .seed import seed_courses
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
 GEMINI_API_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -458,7 +458,11 @@ async def generate_gemini_answer(message: str, courses: list[Course]) -> str:
             "parts": [{"text": "You provide cautious, evidence-aware education exploration guidance."}]
         },
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 700},
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 700,
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
     }
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
